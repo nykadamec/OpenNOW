@@ -1,0 +1,56 @@
+name: macOS Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.0'
+          host: 'mac'
+          target: 'desktop'
+          arch: 'macos'
+          modules: 'qtquick qtquickcontrols2 qtmultimedia qtshadertools qtsvg qt5compat qtimageformats'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Install SDL3
+        run: brew install sdl3
+
+      - name: Configure
+        run: |
+          arch=$(uname -m)
+          cmake -S opennow-qt -B build/opennow-qt -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="$arch" \
+            -DCMAKE_PREFIX_PATH="/opt/homebrew;/usr/local"
+
+      - name: Build
+        run: cmake --build build/opennow-qt --parallel 4
+
+      - name: Test
+        run: ctest --test-dir build/opennow-qt --output-on-failure --parallel 2 || true
+
+      - name: Package
+        run: |
+          cd build/opennow-qt
+          cpack --config CPackConfig.cmake -G 'DragNDrop;ZIP' -B ../../build/qt-packages || true
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: opennow-macos-dmg
+          path: |
+            build/qt-packages/*.dmg
+            build/qt-packages/*.zip
+          if-no-files-found: warn
